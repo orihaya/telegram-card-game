@@ -20,6 +20,7 @@ const gameState = {
     botDelay: 1500, // Задержка хода бота
     bettingRound: 0, // Круг торгов
     isSwara: false, // Флаг свары
+    initialPlayers: [], // Сохранение начального списка игроков
 };
 
 // Инициализация игры после загрузки DOM
@@ -87,8 +88,10 @@ function startRound() {
     gameState.currentPlayer = (gameState.dealer + 1) % gameState.players.length;
     gameState.bettingRound = 0;
     gameState.isSwara = false;
-
     gameState.droppedPlayers = [];
+
+    // Восстановление игроков из начального списка
+    gameState.players = JSON.parse(JSON.stringify(gameState.initialPlayers));
     gameState.players.forEach(player => {
         player.cards = [];
         player.isFolded = false;
@@ -111,6 +114,20 @@ function startRound() {
             updateGameLog(`${player.name} выбывает из-за нехватки фишек`);
         }
     });
+
+    // Фильтрация игроков после обязательных ставок
+    const activePlayers = gameState.players.filter(player => !player.isFolded);
+    if (activePlayers.length <= 1) {
+        if (activePlayers.length === 1) {
+            const winner = activePlayers[0];
+            winner.chips += gameState.bank;
+            updateGameLog(`${winner.name} забирает банк (${gameState.bank})!`);
+        } else {
+            updateGameLog('Никто не может продолжить игру!');
+        }
+        startRound();
+        return;
+    }
 
     dealCards();
     updateGameLog('Карты розданы!');
@@ -528,12 +545,6 @@ function checkEndOfRound() {
     }
 
     nextPlayer();
-
-    if (gameState.currentPlayer === (gameState.dealer + 1) % gameState.players.length) {
-        gameState.bettingRound++;
-        updateGameLog(`Круг торгов ${gameState.bettingRound + 1}`);
-        determineWinner();
-    }
 }
 
 // Переход к следующему игроку
@@ -541,7 +552,7 @@ function nextPlayer() {
     const activePlayers = gameState.players.filter(player => !player.isFolded);
     if (activePlayers.length <= 1) {
         console.log('Остался один игрок или меньше, завершаю раунд');
-        determineWinner();
+        checkEndOfRound();
         return;
     }
 
@@ -554,7 +565,7 @@ function nextPlayer() {
 
     if (attempts >= gameState.players.length) {
         console.error('Не удалось найти следующего игрока!');
-        determineWinner();
+        checkEndOfRound();
         return;
     }
 
@@ -562,6 +573,13 @@ function nextPlayer() {
     console.log(`Переход к следующему игроку: ${gameState.players[gameState.currentPlayer].name}`);
 
     updateUI();
+
+    if (gameState.gamePhase === 'betting' && gameState.currentPlayer === (gameState.dealer + 1) % gameState.players.length) {
+        gameState.bettingRound++;
+        updateGameLog(`Круг торгов ${gameState.bettingRound + 1}`);
+        determineWinner();
+        return;
+    }
 
     if (gameState.players[gameState.currentPlayer].isBot && gameState.gamePhase === 'betting') {
         setTimeout(() => makeBotMove(), gameState.botDelay);
@@ -808,6 +826,7 @@ function initGame() {
         { id: 2, name: 'Алексей', chips: 1000, cards: [], isFolded: false, isBot: true, isBlind: false, bet: 0 },
         { id: 3, name: 'Мария', chips: 1000, cards: [], isFolded: false, isBot: true, isBlind: false, bet: 0 }
     ];
+    gameState.initialPlayers = JSON.parse(JSON.stringify(gameState.players)); // Сохраняем начальный список игроков
 
     chooseDealer();
 }
