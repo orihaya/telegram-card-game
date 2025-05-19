@@ -22,6 +22,7 @@ const gameState = {
     minPlayers: 2, // Минимальное количество игроков
     invitedPlayers: new Set(), // Множество приглашённых игроков
     gameId: Date.now(), // Уникальный идентификатор игры
+    isHost: false, // Флаг, указывающий, является ли пользователь хостом
 };
 
 // Инициализация игры после загрузки DOM
@@ -40,8 +41,11 @@ function initGame() {
     const playerName = user.first_name || `Игрок_${user.id}`;
     const isJoining = tg.initDataUnsafe.start_param && tg.initDataUnsafe.start_param.includes('_join_');
 
-    // Если игрок присоединяется через ссылку
-    if (isJoining) {
+    // Определяем хоста и присоединяющихся игроков
+    if (!isJoining) {
+        gameState.isHost = true;
+        gameState.players.push({ id: user.id, name: playerName, chips: 1000, cards: [], isFolded: false, isBlind: false, bet: 0 });
+    } else {
         const params = new URLSearchParams(tg.initDataUnsafe.start_param);
         const startData = params.get('startapp');
         if (startData && startData.startsWith(`${gameState.gameId}_join_`)) {
@@ -52,9 +56,6 @@ function initGame() {
                 syncGameState();
             }
         }
-    } else {
-        // Если это хост
-        gameState.players.push({ id: user.id, name: playerName, chips: 1000, cards: [], isFolded: false, isBlind: false, bet: 0 });
     }
 
     const setupDiv = document.createElement('div');
@@ -63,16 +64,20 @@ function initGame() {
         <h2>Картойная игра</h2>
         <p>Вы: ${playerName}</p>
         <p>Ожидание других игроков...</p>
-        <p>Скопируйте и отправьте эту ссылку друзьям, чтобы они присоединились:</p>
-        <input type="text" id="invite-link" value="https://t.me/YourBotName?startapp=${gameState.gameId}_join_${user.id}_${encodeURIComponent(playerName)}" readonly onclick="this.select()">
-        <button onclick="refreshPlayerList()">Обновить список игроков</button>
+        ${gameState.isHost ? `
+            <p>Скопируйте и отправьте эту ссылку друзьям, чтобы они присоединились:</p>
+            <input type="text" id="invite-link" value="https://t.me/YourBotName?startapp=${gameState.gameId}_join_${user.id}_${encodeURIComponent(playerName)}" readonly onclick="this.select()">
+            <button onclick="refreshPlayerList()">Обновить список игроков</button>
+        ` : ''}
         <button onclick="startGameIfReady()">Начать игру</button>
     `;
     document.body.appendChild(setupDiv);
 
-    // Периодическая отправка состояния игры
-    setInterval(syncGameState, 5000);
-    // Периодическая проверка подключения игроков
+    // Периодическая синхронизация для хоста
+    if (gameState.isHost) {
+        setInterval(syncGameState, 5000);
+    }
+    // Проверка подключения игроков
     setInterval(checkPlayerResponses, 5000);
 }
 
@@ -85,9 +90,11 @@ function checkPlayerResponses() {
             const stateData = decodeURIComponent(startData.split('_state_')[1]);
             try {
                 const newState = JSON.parse(stateData);
-                gameState.players = newState.players || gameState.players;
-                gameState.invitedPlayers = new Set(newState.players.map(p => p.id));
-                updateSetupUI();
+                if (gameState.isHost) {
+                    gameState.players = newState.players || gameState.players;
+                    gameState.invitedPlayers = new Set(newState.players.map(p => p.id));
+                    updateSetupUI();
+                }
             } catch (e) {
                 console.error('Ошибка парсинга состояния:', e);
             }
@@ -95,16 +102,22 @@ function checkPlayerResponses() {
     }
 }
 
-// Обновить список игроков
+// Обновить список игроков (только для хоста)
 function refreshPlayerList() {
+    if (!gameState.isHost) return;
     const user = tg?.initDataUnsafe?.user;
-    if (!user) return;
-    const refreshLink = `https://t.me/YourBotName?startapp=${gameState.gameId}_state_${encodeURIComponent(JSON.stringify(gameState))}`;
-    window.location.href = refreshLink;
+    const refreshLink = `https://t.me/YourBotName?startapp=${gameState.gameId}_state_${encodeURIComponent(JSON.stringify({ players: gameState.players }))}`;
+    window.location.href = refreshLink; // Хост обновляет своё состояние
+    // Инструкция для игроков обновить вручную
+    updateGameLog('Отправьте эту ссылку другим игрокам для обновления: ' + refreshLink);
 }
 
 // Начать игру, если достаточно игроков
 function startGameIfReady() {
+    if (!gameState.isHost) {
+        alert('Только хост может начать игру!');
+        return;
+    }
     if (gameState.players.length >= gameState.minPlayers) {
         gameState.initialPlayers = JSON.parse(JSON.stringify(gameState.players));
         document.getElementById('game-setup').remove();
@@ -123,9 +136,11 @@ function updateSetupUI() {
             <h2>Картойная игра</h2>
             <p>Вы: ${gameState.players.find(p => p.id === user.id)?.name || 'Неизвестный'}</p>
             <p>Игроки: ${gameState.players.map(p => p.name).join(', ')}</p>
-            <p>Скопируйте и отправьте эту ссылку друзьям, чтобы они присоединились:</p>
-            <input type="text" id="invite-link" value="https://t.me/YourBotName?startapp=${gameState.gameId}_join_${user.id}_${encodeURIComponent(user.first_name || `Игрок_${user.id}`)}" readonly onclick="this.select()">
-            <button onclick="refreshPlayerList()">Обновить список игроков</button>
+            ${gameState.isHost ? `
+                <p>Скопируйте и отправьте эту ссылку друзьям, чтобы они присоединились:</p>
+                <input type="text" id="invite-link" value="https://t.me/YourBotName?startapp=${gameState.gameId}_join_${user.id}_${encodeURIComponent(user.first_name || `Игрок_${user.id}`)}" readonly onclick="this.select()">
+                <button onclick="refreshPlayerList()">Обновить список игроков</button>
+            ` : ''}
             <button onclick="startGameIfReady()">Начать игру</button>
         `;
     }
@@ -266,7 +281,7 @@ function startBetting() {
     updateUI();
     updateGameLog(`Круг торгов ${gameState.bettingRound + 1}`);
 
-    // Отправка данных текущему игроку (для синхронизации)
+    // Синхронизация состояния
     syncGameState();
 }
 
@@ -712,6 +727,7 @@ function nextPlayer() {
 
 // Синхронизация состояния игры
 function syncGameState() {
+    if (!gameState.isHost) return;
     const gameStateData = JSON.stringify({
         action: 'sync',
         gameId: gameState.gameId,
@@ -722,6 +738,7 @@ function syncGameState() {
         gamePhase: gameState.gamePhase
     });
     tg.sendData(gameStateData);
+    updateGameLog('Состояние игры обновлено. Отправьте эту ссылку другим игрокам для синхронизации: https://t.me/YourBotName?startapp=${gameState.gameId}_state_${encodeURIComponent(JSON.stringify({ players: gameState.players }))}', false);
 }
 
 // Определение победителя
