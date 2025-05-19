@@ -1,198 +1,135 @@
-// ==================== ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ====================
-let tg;
-let gameState;
-
-// ==================== ОСНОВНАЯ ИНИЦИАЛИЗАЦИЯ ====================
+// Простейшая рабочая версия игры
 document.addEventListener('DOMContentLoaded', function() {
-    // Инициализация Telegram WebApp
-    if (window.Telegram && window.Telegram.WebApp) {
-        tg = window.Telegram.WebApp;
+    console.log('Скрипт начал выполняться');
+    
+    // Проверяем Telegram WebApp
+    const tg = window.Telegram?.WebApp;
+    if (tg) {
         tg.expand();
-        tg.enableClosingConfirmation();
-        tg.MainButton.setText('Закрыть').show();
-        tg.MainButton.onClick(() => tg.close());
-        logDebug('Telegram WebApp инициализирован');
+        console.log('Telegram WebApp инициализирован');
     } else {
-        logDebug('Режим разработки (вне Telegram)');
-        tg = {
-            showAlert: (msg, callback) => { alert(msg); if(callback) callback(); },
-            close: () => console.log('App closed')
-        };
+        console.log('Режим тестирования в браузере');
     }
 
     // Инициализация игры
     initGame();
 });
 
-// ==================== ИГРОВАЯ ЛОГИКА ====================
 function initGame() {
-    // Инициализация состояния игры
-    gameState = {
+    console.log('Инициализация игры');
+    
+    // Простое состояние игры
+    const gameState = {
         players: [
-            { id: 1, name: 'Вы', chips: 1000, cards: [], isActive: true, isFolded: false },
-            { id: 2, name: 'Игрок 2', chips: 1000, cards: [], isActive: false, isFolded: false },
-            { id: 3, name: 'Игрок 3', chips: 1000, cards: [], isActive: false, isFolded: false }
+            { name: 'Вы', chips: 1000, cards: [] },
+            { name: 'Игрок 2', chips: 1000, cards: [] }
         ],
-        currentPlayerIndex: 0,
         bank: 0,
-        deck: [],
-        currentBet: 0,
-        gamePhase: 'waiting',
-        settings: { minBet: 10, maxPlayers: 7 }
+        deck: createDeck(),
+        currentPlayer: 0
     };
 
-    // Установка имени игрока из Telegram
-    if (window.Telegram && window.Telegram.WebApp && tg.initDataUnsafe.user) {
-        const user = tg.initDataUnsafe.user;
-        gameState.players[0].name = `${user.first_name || 'Игрок'} ${user.last_name || ''}`.trim();
+    // Раздаем карты
+    dealCards(gameState);
+    
+    // Обновляем интерфейс
+    updateUI(gameState);
+    
+    console.log('Игра инициализирована', gameState);
+}
+
+function createDeck() {
+    const suits = ['♥', '♦', '♣', '♠'];
+    const ranks = ['10', 'J', 'Q', 'K', 'A'];
+    const deck = [];
+    
+    for (const suit of suits) {
+        for (const rank of ranks) {
+            deck.push({ suit, rank });
+        }
     }
-
-    createDeck();
-    shuffleDeck();
-    dealCards();
-    updateUI();
-
-    logDebug('Игра инициализирована', gameState);
+    
+    // Добавляем джокера
+    deck.push({ suit: '★', rank: 'Joker' });
+    
+    return shuffleDeck(deck);
 }
 
-// ... (функции createDeck, shuffleDeck, dealCards остаются без изменений) ...
+function shuffleDeck(deck) {
+    for (let i = deck.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [deck[i], deck[j]] = [deck[j], deck[i]];
+    }
+    return deck;
+}
 
-// ==================== ОБНОВЛЕНИЕ ИНТЕРФЕЙСА ====================
-function updateUI() {
-    try {
-        // Обновляем карты
-        renderCards(gameState.players[0].cards);
-        
-        // Обновляем банк
-        document.getElementById('bank').textContent = `Банк: ${gameState.bank}`;
-        
-        // Обновляем список игроков
-        renderPlayersList();
-        
-        // Обновляем действия
-        renderActions();
-        
-        // Обновляем статус игры
-        document.getElementById('game-state').textContent = 
-            gameState.players[0].isActive ? "Ваш ход" : "Ожидайте хода";
-            
-    } catch (e) {
-        logDebug('Ошибка при обновлении UI:', e);
+function dealCards(gameState) {
+    // Раздаем по 3 карты каждому игроку
+    for (let i = 0; i < 3; i++) {
+        for (const player of gameState.players) {
+            if (gameState.deck.length > 0) {
+                player.cards.push(gameState.deck.pop());
+            }
+        }
     }
 }
 
-function renderCards(cards) {
-    const container = document.getElementById('player-cards');
-    container.innerHTML = '';
+function updateUI(gameState) {
+    console.log('Обновление интерфейса');
     
-    cards.forEach(card => {
-        const cardEl = document.createElement('div');
-        cardEl.className = `card ${card.color}`;
-        cardEl.innerHTML = `<div>${card.rank}</div><div>${card.suit}</div>`;
-        container.appendChild(cardEl);
+    // Показываем карты первого игрока (ваши)
+    const cardsContainer = document.getElementById('player-cards');
+    cardsContainer.innerHTML = '';
+    
+    gameState.players[0].cards.forEach(card => {
+        const cardElement = document.createElement('div');
+        cardElement.className = 'card';
+        cardElement.textContent = `${card.rank}${card.suit}`;
+        cardsContainer.appendChild(cardElement);
     });
-}
-
-function renderPlayersList() {
-    const container = document.getElementById('players-list');
-    container.innerHTML = '<h3>Игроки:</h3>';
     
-    gameState.players.forEach(player => {
-        const playerEl = document.createElement('div');
-        playerEl.className = 'player';
-        playerEl.innerHTML = `
-            <span>${player.name} ${player.isActive ? '▶' : ''}</span>
-            <span>${player.chips} фишек</span>
-        `;
-        container.appendChild(playerEl);
-    });
-}
-
-// ==================== ОБРАБОТЧИКИ ДЕЙСТВИЙ ====================
-function renderActions() {
-    const container = document.getElementById('actions');
-    container.innerHTML = '';
+    // Обновляем банк
+    document.getElementById('bank').textContent = `Банк: ${gameState.bank}`;
     
-    // Убедимся, что это ход игрока
-    if (!gameState.players[0].isActive || gameState.players[0].isFolded) return;
+    // Показываем кнопки действий
+    const actionsContainer = document.getElementById('actions');
+    actionsContainer.innerHTML = '';
     
     const actions = [
-        { id: 'fold', text: 'Сбросить', handler: handleFold, class: 'fold' },
-        { id: 'check', text: 'Проверить', handler: handleCheck, class: 'check' },
-        { id: 'bet', text: `Ставка (${gameState.settings.minBet})`, 
-          handler: () => handleBet(gameState.settings.minBet), class: 'bet' },
-        { id: 'raise', text: `Поднять (${gameState.settings.minBet * 2})`, 
-          handler: () => handleBet(gameState.settings.minBet * 2), class: 'raise' }
+        { text: 'Сбросить', action: 'fold' },
+        { text: 'Проверить', action: 'check' },
+        { text: 'Ставка 10', action: 'bet' }
     ];
     
-    actions.forEach(action => {
-        const btn = document.createElement('button');
-        btn.id = action.id;
-        btn.className = action.class;
-        btn.textContent = action.text;
-        
-        // Правильное назначение обработчика
-        btn.addEventListener('click', action.handler);
-        
-        // Для мобильных устройств
-        btn.addEventListener('touchend', action.handler);
-        
-        container.appendChild(btn);
+    actions.forEach(btn => {
+        const button = document.createElement('button');
+        button.textContent = btn.text;
+        button.onclick = () => handleAction(btn.action, gameState);
+        actionsContainer.appendChild(button);
     });
-}
-
-function handleFold() {
-    logDebug('Сброс карт');
-    gameState.players[0].isFolded = true;
-    tg.showAlert('Вы сбросили карты', () => {
-        gameState.gamePhase = 'showdown';
-        updateUI();
-    });
-}
-
-function handleCheck() {
-    logDebug('Проверка');
-    tg.showAlert('Вы проверяете');
-    nextPlayer();
-}
-
-function handleBet(amount) {
-    logDebug(`Ставка ${amount}`);
-    if (gameState.players[0].chips >= amount) {
-        gameState.players[0].chips -= amount;
-        gameState.bank += amount;
-        gameState.currentBet = amount;
-        tg.showAlert(`Вы поставили ${amount}`);
-        nextPlayer();
-    } else {
-        tg.showAlert('Недостаточно фишек');
-    }
-}
-
-function nextPlayer() {
-    gameState.currentPlayerIndex = (gameState.currentPlayerIndex + 1) % gameState.players.length;
-    gameState.players.forEach(p => p.isActive = false);
-    gameState.players[gameState.currentPlayerIndex].isActive = true;
     
-    updateUI();
+    // Обновляем статус
+    document.getElementById('game-state').textContent = 'Ваш ход';
+}
+
+function handleAction(action, gameState) {
+    console.log('Действие:', action);
     
-    // Если это бот - делаем ход
-    if (gameState.currentPlayerIndex !== 0) {
-        setTimeout(makeBotMove, 1500);
+    let message = '';
+    switch (action) {
+        case 'fold':
+            message = 'Вы сбросили карты';
+            break;
+        case 'check':
+            message = 'Вы проверяете';
+            break;
+        case 'bet':
+            gameState.bank += 10;
+            gameState.players[0].chips -= 10;
+            message = 'Вы сделали ставку 10';
+            break;
     }
-}
-
-function makeBotMove() {
-    const actions = [handleFold, handleCheck, () => handleBet(gameState.settings.minBet)];
-    const randomAction = actions[Math.floor(Math.random() * actions.length)];
-    randomAction.call(this);
-}
-
-// ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
-function logDebug(message, data) {
-    console.log(message, data);
-    const debugEl = document.getElementById('debug-console');
-    if (debugEl) {
-        debugEl.innerHTML += `<div>${message}</div>`;
-    }
+    
+    alert(message);
+    updateUI(gameState);
 }
