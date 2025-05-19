@@ -1,0 +1,155 @@
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    background-color: #18222d;
+    color: #fff;
+}
+
+#app {
+    max-width: 100%;
+    padding: 20px;
+    box-sizing: border-box;
+    min-height: 100vh;
+}
+
+.game-container {
+    background-color: #2c3e50;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+    max-width: 500px;
+    margin: 0 auto;
+}
+
+h1 {
+    text-align: center;
+    color: #f1c40f;
+    margin-bottom: 20px;
+}
+
+.cards-container {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin: 20px 0;
+    flex-wrap: wrap;
+}
+
+.card {
+    width: 70px;
+    height: 100px;
+    background-color: white;
+    border-radius: 8px;
+    border: 2px solid #ddd;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    font-size: 20px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    color: #333;
+    position: relative;
+}
+
+.card.red {
+    color: #e74c3c;
+}
+
+.card.black {
+    color: #2c3e50;
+}
+
+.card .suit {
+    font-size: 24px;
+    margin-top: 5px;
+}
+
+.actions-container {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin: 20px 0;
+    flex-wrap: wrap;
+}
+
+button {
+    padding: 12px 20px;
+    border: none;
+    border-radius: 8px;
+    background-color: #3498db;
+    color: white;
+    font-weight: bold;
+    cursor: pointer;
+    font-size: 16px;
+    transition: all 0.2s;
+}
+
+button:hover {
+    background-color: #2980b9;
+    transform: translateY(-2px);
+}
+
+button:disabled {
+    background-color: #7f8c8d;
+    cursor: not-allowed;
+    transform: none;
+}
+
+button.fold {
+    background-color: #e74c3c;
+}
+
+button.bet {
+    background-color: #2ecc71;
+}
+
+button.check {
+    background-color: #f39c12;
+}
+
+button.raise {
+    background-color: #9b59b6;
+}
+
+#bank {
+    text-align: center;
+    font-weight: bold;
+    font-size: 20px;
+    margin-top: 20px;
+    color: #f1c40f;
+}
+
+#players-list {
+    margin-top: 20px;
+    background-color: #34495e;
+    padding: 15px;
+    border-radius: 8px;
+}
+
+.player {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid #2c3e50;
+}
+
+.player:last-child {
+    border-bottom: none;
+}
+
+.player-name {
+    font-weight: bold;
+}
+
+.player-chips {
+    color: #f1c40f;
+}
+
+#debug-close {
+    background-color: #e74c3c;
+    color: white;
+    padding: 10px 15px;
+    border-radius: 5px;
+    z-index: 1000;
+}

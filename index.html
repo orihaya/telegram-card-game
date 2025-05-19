@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Карточная игра в Telegram</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="app.js" defer></script>
+</head>
+<body>
+    <div id="app">
+        <div class="game-container">
+            <h1>Карточная игра</h1>
+            <div id="game-state">Загрузка...</div>
+            <div id="player-cards" class="cards-container"></div>
+            <div id="actions" class="actions-container"></div>
+            <div id="bank">Банк: 0</div>
+            <div id="players-list"></div>
+        </div>
+    </div>
+    <!-- Кнопка для тестирования вне Telegram -->
+    <button id="debug-close" style="display: none; position: fixed; bottom: 20px; right: 20px;">Закрыть (тест)</button>
+</body>
+</html>
