@@ -170,7 +170,7 @@ function calculatePoints(cards) {
 
 // Обновление интерфейса
 function updateUI() {
-    console.log('Обновляю UI');
+    console.log('Обновляю UI для игрока', gameState.players[gameState.currentPlayer].name);
     document.getElementById('bank-amount').textContent = gameState.bank;
 
     renderPlayerCards();
@@ -184,7 +184,7 @@ function renderPlayerCards() {
     const container = document.getElementById('player-cards');
     container.innerHTML = '';
 
-    const player = gameState.players[0];
+    const player = gameState.players[0]; // Всегда рендерим карты только текущего игрока
     if (player.isBlind) {
         for (let i = 0; i < 3; i++) {
             const cardElement = document.createElement('div');
@@ -322,8 +322,8 @@ function handleFold() {
     const player = gameState.players[0];
     player.isFolded = true;
     gameState.droppedPlayers.push(player);
-    updateGameLog(`${player.name} упал`);
     gameState.players = gameState.players.filter(p => !p.isFolded);
+    updateGameLog(`${player.name} упал`);
     checkEndOfRound();
 }
 
@@ -447,11 +447,16 @@ function handleShowdown() {
         gameState.droppedPlayers.push(opponent);
         gameState.players = gameState.players.filter(p => !p.isFolded);
         updateGameLog(`${player.name} побеждает в вскрытии!`);
-    } else {
+    } else if (playerPoints < opponentPoints) {
         player.isFolded = true;
         gameState.droppedPlayers.push(player);
         gameState.players = gameState.players.filter(p => !p.isFolded);
         updateGameLog(`${opponent.name} побеждает в вскрытии!`);
+    } else {
+        player.isFolded = true;
+        gameState.droppedPlayers.push(player);
+        gameState.players = gameState.players.filter(p => !p.isFolded);
+        updateGameLog('Равные очки! Выбывает вскрывающийся.');
     }
 
     checkEndOfRound();
@@ -497,7 +502,7 @@ function checkEndOfRound() {
 function nextPlayer() {
     do {
         gameState.currentPlayer = (gameState.currentPlayer + 1) % gameState.players.length;
-    } while (gameState.players[gameState.currentPlayer].isFolded);
+    } while (gameState.players[gameState.currentPlayer].isFolded && gameState.players.filter(p => !p.isFolded).length > 1);
 
     updateUI();
 
@@ -509,6 +514,7 @@ function nextPlayer() {
 // Ход бота
 function makeBotMove() {
     const bot = gameState.players[gameState.currentPlayer];
+    console.log(`Ход бота ${bot.name}, фишки: ${bot.chips}, ставка: ${bot.bet}, текущая ставка: ${gameState.currentBet}`);
     const botPoints = calculatePoints(bot.cards);
     const actions = [
         { name: 'fold', weight: botPoints < 15 ? 0.4 : 0.2 },
@@ -615,11 +621,16 @@ function makeBotMove() {
                 gameState.droppedPlayers.push(opponent);
                 gameState.players = gameState.players.filter(p => !p.isFolded);
                 updateGameLog(`${bot.name} побеждает в вскрытии!`);
-            } else {
+            } else if (botPoints < opponentPoints) {
                 bot.isFolded = true;
                 gameState.droppedPlayers.push(bot);
                 gameState.players = gameState.players.filter(p => !p.isFolded);
                 updateGameLog(`${opponent.name} побеждает в вскрытии!`);
+            } else {
+                bot.isFolded = true;
+                gameState.droppedPlayers.push(bot);
+                gameState.players = gameState.players.filter(p => !p.isFolded);
+                updateGameLog('Равные очки! Выбывает вскрывающийся.');
             }
             break;
     }
