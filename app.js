@@ -21,6 +21,7 @@ const gameState = {
     isSwara: false, // Флаг свары
     minPlayers: 2, // Минимальное количество игроков
     invitedPlayers: new Set(), // Множество приглашённых игроков
+    gameId: Date.now(), // Уникальный идентификатор игры
 };
 
 // Инициализация игры после загрузки DOM
@@ -45,35 +46,29 @@ function initGame() {
         <h2>Картойная игра</h2>
         <p>Вы: ${playerName}</p>
         <p>Ожидание других игроков...</p>
-        <button onclick="invitePlayers()">Пригласить друзей</button>
+        <p>Скопируйте и отправьте эту ссылку друзьям, чтобы они присоединились:</p>
+        <input type="text" id="invite-link" value="https://t.me/YourBotName?startapp=${gameState.gameId}_join_${user.id}_${encodeURIComponent(playerName)}" readonly onclick="this.select()">
         <button onclick="startGameIfReady()">Начать игру</button>
     `;
     document.body.appendChild(setupDiv);
 
-    // Периодическая проверка подключения игроков (симуляция)
+    // Периодическая проверка подключения игроков
     setInterval(checkPlayerResponses, 5000);
-}
-
-// Приглашение игроков
-function invitePlayers() {
-    const inviteMessage = JSON.stringify({
-        action: 'invite',
-        gameId: Date.now(), // Уникальный идентификатор игры
-        host: gameState.players[0].id
-    });
-    tg.sendData(inviteMessage);
-    updateGameLog('Приглашение отправлено другим игрокам!');
 }
 
 // Проверка ответов от игроков
 function checkPlayerResponses() {
     if (tg.initDataUnsafe && tg.initDataUnsafe.start_param) {
-        const data = JSON.parse(decodeURIComponent(tg.initDataUnsafe.start_param));
-        if (data.action === 'join' && !gameState.invitedPlayers.has(data.playerId)) {
-            gameState.invitedPlayers.add(data.playerId);
-            gameState.players.push({ id: data.playerId, name: data.playerName || `Игрок_${data.playerId}`, chips: 1000, cards: [], isFolded: false, isBlind: false, bet: 0 });
-            updateGameLog(`${data.playerName || `Игрок_${data.playerId}`} присоединился к игре!`);
-            updateSetupUI();
+        const params = new URLSearchParams(tg.initDataUnsafe.start_param);
+        const startData = params.get('startapp');
+        if (startData && startData.startsWith(`${gameState.gameId}_join_`)) {
+            const [_, __, playerId, playerName] = startData.split('_');
+            if (!gameState.invitedPlayers.has(playerId)) {
+                gameState.invitedPlayers.add(playerId);
+                gameState.players.push({ id: playerId, name: decodeURIComponent(playerName) || `Игрок_${playerId}`, chips: 1000, cards: [], isFolded: false, isBlind: false, bet: 0 });
+                updateGameLog(`${decodeURIComponent(playerName) || `Игрок_${playerId}`} присоединился к игре!`);
+                updateSetupUI();
+            }
         }
     }
 }
@@ -97,7 +92,8 @@ function updateSetupUI() {
             <h2>Картойная игра</h2>
             <p>Вы: ${gameState.players[0].name}</p>
             <p>Игроки: ${gameState.players.map(p => p.name).join(', ')}</p>
-            <button onclick="invitePlayers()">Пригласить друзей</button>
+            <p>Скопируйте и отправьте эту ссылку друзьям, чтобы они присоединились:</p>
+            <input type="text" id="invite-link" value="https://t.me/YourBotName?startapp=${gameState.gameId}_join_${gameState.players[0].id}_${encodeURIComponent(gameState.players[0].name)}" readonly onclick="this.select()">
             <button onclick="startGameIfReady()">Начать игру</button>
         `;
     }
