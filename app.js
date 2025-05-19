@@ -19,45 +19,88 @@ const gameState = {
     maxBet: 1000, // Потолок ставки
     bettingRound: 0, // Круг торгов
     isSwara: false, // Флаг свары
-    initialPlayers: [], // Сохранение начального списка игроков
+    minPlayers: 2, // Минимальное количество игроков
+    invitedPlayers: new Set(), // Множество приглашённых игроков
 };
 
 // Инициализация игры после загрузки DOM
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('DOM загружен, начинаю настройку игроков');
-    setupPlayers();
+    console.log('DOM загружен, начинаю настройку игры');
+    initGame();
 });
 
-// Настройка игроков
-function setupPlayers() {
-    const playerSetup = document.createElement('div');
-    playerSetup.id = 'player-setup';
-    playerSetup.innerHTML = `
-        <h2>Настройка игроков</h2>
-        <input type="text" id="player-name-1" placeholder="Имя игрока 1" value="${tg?.initDataUnsafe?.user?.first_name || 'Игрок 1'}" required>
-        <input type="text" id="player-name-2" placeholder="Имя игрока 2" required>
-        <input type="text" id="player-name-3" placeholder="Имя игрока 3 (опционально)">
-        <button onclick="startGameWithPlayers()">Начать игру</button>
-    `;
-    document.body.appendChild(playerSetup);
-}
-
-function startGameWithPlayers() {
-    const player1 = document.getElementById('player-name-1').value.trim() || 'Игрок 1';
-    const player2 = document.getElementById('player-name-2').value.trim() || 'Игрок 2';
-    const player3 = document.getElementById('player-name-3').value.trim() || '';
-
-    gameState.players = [
-        { id: 1, name: player1, chips: 1000, cards: [], isFolded: false, isBlind: false, bet: 0 },
-        { id: 2, name: player2, chips: 1000, cards: [], isFolded: false, isBlind: false, bet: 0 }
-    ];
-    if (player3) {
-        gameState.players.push({ id: 3, name: player3, chips: 1000, cards: [], isFolded: false, isBlind: false, bet: 0 });
+function initGame() {
+    const user = tg?.initDataUnsafe?.user;
+    if (!user) {
+        alert('Не удалось определить пользователя!');
+        return;
     }
 
-    gameState.initialPlayers = JSON.parse(JSON.stringify(gameState.players));
-    document.getElementById('player-setup').remove();
-    chooseDealer();
+    const playerName = user.first_name || `Игрок_${user.id}`;
+    gameState.players.push({ id: user.id, name: playerName, chips: 1000, cards: [], isFolded: false, isBlind: false, bet: 0 });
+
+    const setupDiv = document.createElement('div');
+    setupDiv.id = 'game-setup';
+    setupDiv.innerHTML = `
+        <h2>Картойная игра</h2>
+        <p>Вы: ${playerName}</p>
+        <p>Ожидание других игроков...</p>
+        <button onclick="invitePlayers()">Пригласить друзей</button>
+        <button onclick="startGameIfReady()">Начать игру</button>
+    `;
+    document.body.appendChild(setupDiv);
+
+    // Периодическая проверка подключения игроков (симуляция)
+    setInterval(checkPlayerResponses, 5000);
+}
+
+// Приглашение игроков
+function invitePlayers() {
+    const inviteMessage = JSON.stringify({
+        action: 'invite',
+        gameId: Date.now(), // Уникальный идентификатор игры
+        host: gameState.players[0].id
+    });
+    tg.sendData(inviteMessage);
+    updateGameLog('Приглашение отправлено другим игрокам!');
+}
+
+// Проверка ответов от игроков
+function checkPlayerResponses() {
+    if (tg.initDataUnsafe && tg.initDataUnsafe.start_param) {
+        const data = JSON.parse(decodeURIComponent(tg.initDataUnsafe.start_param));
+        if (data.action === 'join' && !gameState.invitedPlayers.has(data.playerId)) {
+            gameState.invitedPlayers.add(data.playerId);
+            gameState.players.push({ id: data.playerId, name: data.playerName || `Игрок_${data.playerId}`, chips: 1000, cards: [], isFolded: false, isBlind: false, bet: 0 });
+            updateGameLog(`${data.playerName || `Игрок_${data.playerId}`} присоединился к игре!`);
+            updateSetupUI();
+        }
+    }
+}
+
+// Начать игру, если достаточно игроков
+function startGameIfReady() {
+    if (gameState.players.length >= gameState.minPlayers) {
+        gameState.initialPlayers = JSON.parse(JSON.stringify(gameState.players));
+        document.getElementById('game-setup').remove();
+        chooseDealer();
+    } else {
+        alert(`Нужно минимум ${gameState.minPlayers} игрока(ов), текущих: ${gameState.players.length}`);
+    }
+}
+
+// Обновление интерфейса настройки
+function updateSetupUI() {
+    const setupDiv = document.getElementById('game-setup');
+    if (setupDiv) {
+        setupDiv.innerHTML = `
+            <h2>Картойная игра</h2>
+            <p>Вы: ${gameState.players[0].name}</p>
+            <p>Игроки: ${gameState.players.map(p => p.name).join(', ')}</p>
+            <button onclick="invitePlayers()">Пригласить друзей</button>
+            <button onclick="startGameIfReady()">Начать игру</button>
+        `;
+    }
 }
 
 // Создание колоды (36 карт, джокер = трефовая семёрка)
@@ -194,6 +237,15 @@ function startBetting() {
     console.log(`Начинаю торги, текущий игрок: ${currentPlayer.name}`);
     updateUI();
     updateGameLog(`Круг торгов ${gameState.bettingRound + 1}`);
+
+    // Отправка данных текущему игроку (для синхронизации)
+    const gameStateData = JSON.stringify({
+        action: 'turn',
+        currentPlayer: currentPlayer.id,
+        bank: gameState.bank,
+        currentBet: gameState.currentBet
+    });
+    tg.sendData(gameStateData);
 }
 
 // Подсчёт очков игрока
@@ -395,6 +447,7 @@ function handleFold() {
     gameState.droppedPlayers.push({ ...player });
     gameState.players = gameState.players.filter(p => !p.isFolded);
     updateGameLog(`${player.name} упал`);
+    syncGameState();
     checkEndOfRound();
 }
 
@@ -404,6 +457,7 @@ function handleSee() {
     player.isBlind = false;
     updateGameLog(`${player.name} посмотрел свои карты`);
     updateUI();
+    syncGameState();
     nextPlayer();
 }
 
@@ -420,6 +474,7 @@ function handleCall() {
         player.isFolded = true;
         gameState.droppedPlayers.push({ ...player });
         gameState.players = gameState.players.filter(p => !p.isFolded);
+        syncGameState();
         checkEndOfRound();
         return;
     }
@@ -427,6 +482,7 @@ function handleCall() {
     player.bet += amount;
     gameState.bank += amount;
     updateGameLog(`${player.name} поддерживает ставку (${amount})`);
+    syncGameState();
     checkEndOfRound();
 }
 
@@ -458,6 +514,7 @@ function handleRaise() {
             }
         });
     }
+    syncGameState();
     checkEndOfRound();
 }
 
@@ -478,6 +535,7 @@ function handleBlind() {
     gameState.currentBet = blindBet;
     updateGameLog(`${player.name} играет в тёмную с ставкой ${blindBet}`);
     updateUI();
+    syncGameState();
     checkEndOfRound();
 }
 
@@ -505,6 +563,7 @@ function handleShowdown() {
         player.isFolded = true;
         gameState.droppedPlayers.push({ ...player });
         gameState.players = gameState.players.filter(p => !p.isFolded);
+        syncGameState();
         checkEndOfRound();
         return;
     }
@@ -537,6 +596,7 @@ function handleShowdown() {
         updateGameLog('Равные очки! Выбывает вскрывающийся.');
     }
 
+    syncGameState();
     checkEndOfRound();
 }
 
@@ -551,6 +611,7 @@ function handleSplitBank() {
         player.chips += share;
         updateGameLog(`${player.name} получает долю банка (${share})`);
     });
+    syncGameState();
     startRound();
 }
 
@@ -562,12 +623,14 @@ function checkEndOfRound() {
         const winner = activePlayers[0];
         winner.chips += gameState.bank;
         updateGameLog(`${winner.name} забирает банк (${gameState.bank})!`);
+        syncGameState();
         startRound();
         return;
     }
 
     if (activePlayers.length === 0) {
         updateGameLog('Никто не остался в игре!');
+        syncGameState();
         startRound();
         return;
     }
@@ -601,6 +664,20 @@ function nextPlayer() {
     console.log(`Переход к следующему игроку: ${gameState.players[gameState.currentPlayer].name}`);
 
     updateUI();
+    syncGameState();
+}
+
+// Синхронизация состояния игры
+function syncGameState() {
+    const gameStateData = JSON.stringify({
+        action: 'sync',
+        players: gameState.players,
+        bank: gameState.bank,
+        currentBet: gameState.currentBet,
+        currentPlayer: gameState.currentPlayer,
+        gamePhase: gameState.gamePhase
+    });
+    tg.sendData(gameStateData);
 }
 
 // Определение победителя
@@ -610,6 +687,7 @@ function determineWinner() {
         const winner = activePlayers[0];
         winner.chips += gameState.bank;
         updateGameLog(`${winner.name} забирает банк (${gameState.bank})!`);
+        syncGameState();
         startRound();
         return;
     }
@@ -632,11 +710,13 @@ function determineWinner() {
         const winner = winners[0].player;
         winner.chips += gameState.bank;
         updateGameLog(`${winner.name} побеждает и забирает банк (${gameState.bank})!`);
+        syncGameState();
         startRound();
     } else {
         updateGameLog('Ничья! Выберите действие:');
         gameState.gamePhase = 'showdown';
         gameState.showdownWinners = winners;
+        syncGameState();
         updateUI();
     }
 }
@@ -671,6 +751,7 @@ function startSwara(winners) {
     gameState.players = swaraParticipants;
     if (gameState.players.length === 0) {
         updateGameLog('Никто не участвует в сваре!');
+        syncGameState();
         startRound();
         return;
     }
@@ -681,6 +762,7 @@ function startSwara(winners) {
     updateGameLog('Карты для свары розданы!');
     gameState.currentPlayer = 0;
     gameState.currentBet = gameState.baseBet;
+    syncGameState();
     startBetting();
 }
 
