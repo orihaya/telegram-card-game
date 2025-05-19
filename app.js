@@ -14,23 +14,15 @@ const gameState = {
     currentPlayer: 0, // Текущий игрок (индекс)
     dealer: 0, // Индекс раздающего
     gamePhase: 'waiting', // waiting, dealing, betting, showdown, swara
-    baseBet: 50, // Базовая ставка (договорились перед игрой)
+    baseBet: 50, // Базовая ставка
     botDelay: 1500, // Задержка хода бота
 };
 
-// Инициализация игры
-function initGame() {
-    // Создаём игроков (1 реальный + 2 бота для примера, до 7 игроков)
-    const playerName = tg?.initDataUnsafe?.user?.first_name || 'Вы';
-    gameState.players = [
-        { id: 1, name: playerName, chips: 1000, cards: [], isFolded: false, isBot: false, isBlind: false, bet: 0 },
-        { id: 2, name: 'Алексей', chips: 1000, cards: [], isFolded: false, isBot: true, isBlind: false, bet: 0 },
-        { id: 3, name: 'Мария', chips: 1000, cards: [], isFolded: false, isBot: true, isBlind: false, bet: 0 }
-    ];
-
-    // Выбираем раздающего
-    chooseDealer();
-}
+// Инициализация игры после загрузки DOM
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('DOM загружен, начинаю initGame');
+    initGame();
+});
 
 // Создание колоды (21 карта + джокер)
 function createDeck() {
@@ -43,13 +35,12 @@ function createDeck() {
             deck.push({
                 suit,
                 rank,
-                value: rank === 'A' ? 11 : 10, // Туз = 11, остальные = 10
+                value: rank === 'A' ? 11 : 10,
                 color: (suit === '♥' || suit === '♦') ? 'red' : 'black'
             });
         }
     }
 
-    // Добавляем джокера
     deck.push({
         suit: '★',
         rank: 'Joker',
@@ -70,7 +61,7 @@ function shuffleDeck(deck) {
     return deck;
 }
 
-// Выбор раздающего (по первой вытянутой карте с тузом)
+// Выбор раздающего
 function chooseDealer() {
     gameState.deck = createDeck();
     shuffleDeck(gameState.deck);
@@ -86,7 +77,6 @@ function chooseDealer() {
         }
     }
 
-    // Начинаем новый раунд
     startRound();
 }
 
@@ -97,7 +87,6 @@ function startRound() {
     gameState.currentBet = gameState.baseBet;
     gameState.currentPlayer = (gameState.dealer + 1) % gameState.players.length;
 
-    // Сбрасываем состояние игроков
     gameState.players.forEach(player => {
         player.cards = [];
         player.isFolded = false;
@@ -105,11 +94,9 @@ function startRound() {
         player.bet = 0;
     });
 
-    // Создаём и перемешиваем колоду
     gameState.deck = createDeck();
     shuffleDeck(gameState.deck);
 
-    // Собираем базовые ставки
     gameState.players.forEach(player => {
         player.chips -= gameState.baseBet;
         player.bet = gameState.baseBet;
@@ -117,15 +104,12 @@ function startRound() {
         updateGameLog(`${player.name} вносит базовую ставку (${gameState.baseBet})`);
     });
 
-    // Раздаём карты
     dealCards();
     updateGameLog('Карты розданы!');
-
-    // Начинаем торги
     startBetting();
 }
 
-// Раздача карт (по 3 карты каждому игроку)
+// Раздача карт
 function dealCards() {
     for (let i = 0; i < 3; i++) {
         for (const player of gameState.players) {
@@ -148,19 +132,12 @@ function startBetting() {
 
 // Обновление интерфейса
 function updateUI() {
-    // Обновляем банк
+    console.log('Обновляю UI');
     document.getElementById('bank-amount').textContent = gameState.bank;
 
-    // Показываем карты игрока
     renderPlayerCards();
-
-    // Показываем оппонентов
     renderOpponents();
-
-    // Обновляем информацию о игрока
     updatePlayerInfo();
-
-    // Показываем доступные действия
     renderActions();
 }
 
@@ -171,7 +148,6 @@ function renderPlayerCards() {
 
     const player = gameState.players[0];
     if (player.isBlind) {
-        // Если игрок "в тёмную", показываем рубашку карт
         for (let i = 0; i < 3; i++) {
             const cardElement = document.createElement('div');
             cardElement.className = 'card back';
@@ -179,7 +155,6 @@ function renderPlayerCards() {
             container.appendChild(cardElement);
         }
     } else {
-        // Показываем карты игрока
         player.cards.forEach(card => {
             const cardElement = createCardElement(card);
             container.appendChild(cardElement);
@@ -227,30 +202,25 @@ function renderActions() {
 
     const currentPlayer = gameState.players[gameState.currentPlayer];
 
-    // Если ход игрока и он не сбросил карты
     if (gameState.currentPlayer === 0 && !currentPlayer.isFolded && gameState.gamePhase === 'betting') {
-        // Кнопка сброса
         const foldBtn = document.createElement('button');
         foldBtn.className = 'action-btn fold-btn';
         foldBtn.textContent = 'Сбросить';
         foldBtn.onclick = () => handleFold();
         container.appendChild(foldBtn);
 
-        // Кнопка подтверждения (колл)
         const callBtn = document.createElement('button');
         callBtn.className = 'action-btn check-btn';
         callBtn.textContent = 'Подтвердить';
         callBtn.onclick = () => handleCall();
         container.appendChild(callBtn);
 
-        // Кнопка повышения ставки
         const raiseBtn = document.createElement('button');
         raiseBtn.className = 'action-btn bet-btn';
         raiseBtn.textContent = 'Повысить';
         raiseBtn.onclick = () => handleRaise();
         container.appendChild(raiseBtn);
 
-        // Кнопка игры "в тёмную" (только для игрока слева от раздающего в начале)
         if (gameState.currentPlayer === (gameState.dealer + 1) % gameState.players.length && !currentPlayer.isBlind) {
             const blindBtn = document.createElement('button');
             blindBtn.className = 'action-btn raise-btn';
@@ -259,7 +229,6 @@ function renderActions() {
             container.appendChild(blindBtn);
         }
 
-        // Кнопка вскрытия карт
         const showdownBtn = document.createElement('button');
         showdownBtn.className = 'action-btn raise-btn';
         showdownBtn.textContent = 'Вскрыть карты';
@@ -278,7 +247,7 @@ function handleFold() {
 
 function handleCall() {
     const player = gameState.players[0];
-    const amount = gameState.currentBet - player.bet; // Дополняем до текущей ставки
+    const amount = gameState.currentBet - player.bet;
     if (amount > player.chips) {
         updateGameLog('Недостаточно фишек!', true);
         return;
@@ -292,7 +261,7 @@ function handleCall() {
 
 function handleRaise() {
     const player = gameState.players[0];
-    const raiseAmount = gameState.currentBet * 2; // Повышаем в 2 раза
+    const raiseAmount = gameState.currentBet * 2;
     const amount = raiseAmount - player.bet;
     if (amount > player.chips) {
         updateGameLog('Недостаточно фишек!', true);
@@ -308,7 +277,7 @@ function handleRaise() {
 
 function handleBlind() {
     const player = gameState.players[0];
-    const blindBet = gameState.currentBet * 2; // Удваиваем ставку для игры "в тёмную"
+    const blindBet = gameState.currentBet * 2;
     const amount = blindBet - player.bet;
     if (amount > player.chips) {
         updateGameLog('Недостаточно фишек!', true);
@@ -338,7 +307,6 @@ function nextPlayer() {
 
     updateUI();
 
-    // Если следующий игрок — бот
     if (gameState.players[gameState.currentPlayer].isBot && gameState.gamePhase === 'betting') {
         setTimeout(() => makeBotMove(), gameState.botDelay);
     }
@@ -347,9 +315,8 @@ function nextPlayer() {
 // Ход бота
 function makeBotMove() {
     const bot = gameState.players[gameState.currentPlayer];
-    // Простая логика: бот подтверждает или сбрасывает
     const actions = [
-        { name: 'fold', weight: bot.isBlind ? 0.1 : 0.3 }, // Меньше сбрасывает, если "в тёмную"
+        { name: 'fold', weight: bot.isBlind ? 0.1 : 0.3 },
         { name: 'call', weight: 0.5 },
         { name: 'raise', weight: 0.2 }
     ];
@@ -373,7 +340,7 @@ function makeBotMove() {
             updateGameLog(`${bot.name} сбрасывает карты`);
             break;
         case 'call':
-            if (amount <= bot nook.chips) {
+            if (amount <= bot.chips) {
                 bot.chips -= amount;
                 bot.bet += amount;
                 gameState.bank += amount;
@@ -402,25 +369,21 @@ function makeBotMove() {
     nextPlayer();
 }
 
-// Подсчёт очков игрока
+// Подсчёт очков
 function calculatePoints(cards) {
-    // Проверяем, есть ли джокер
     const hasJoker = cards.some(card => card.isJoker);
     const nonJokerCards = cards.filter(card => !card.isJoker);
 
-    // Все карты одной масти (с учётом джокера)
     const sameSuit = nonJokerCards.every(card => card.suit === nonJokerCards[0]?.suit);
     if (sameSuit || (hasJoker && nonJokerCards.length <= 2)) {
-        return cards.reduce((sum, card) => sum + (card.isJoker ? 10 : card.value), 0); // Джокер = 10 (среднее)
+        return cards.reduce((sum, card) => sum + (card.isJoker ? 10 : card.value), 0);
     }
 
-    // Карты одинакового номинала
     const sameRank = nonJokerCards.every(card => card.rank === nonJokerCards[0]?.rank);
     if (sameRank || (hasJoker && nonJokerCards.length === 2 && nonJokerCards[0].rank === nonJokerCards[1].rank)) {
         return cards.reduce((sum, card) => sum + (card.isJoker ? 10 : card.value), 0);
     }
 
-    // Только старшая карта
     return Math.max(...cards.map(card => card.isJoker ? 10 : card.value));
 }
 
@@ -433,17 +396,14 @@ function determineWinner() {
         return;
     }
 
-    // Подсчитываем очки
     const scores = activePlayers.map(player => ({
         player,
         points: calculatePoints(player.cards)
     }));
 
-    // Находим максимальное количество очков
     const maxPoints = Math.max(...scores.map(s => s.points));
     const winners = scores.filter(s => s.points === maxPoints);
 
-    // Показываем карты и очки
     activePlayers.forEach(player => {
         const cardsStr = player.cards.map(c => `${c.rank}${c.suit}`).join(', ');
         const points = calculatePoints(player.cards);
@@ -451,26 +411,23 @@ function determineWinner() {
     });
 
     if (winners.length === 1) {
-        // Один победитель
         const winner = winners[0].player;
         winner.chips += gameState.bank;
         updateGameLog(`${winner.name} побеждает и забирает банк (${gameState.bank})!`);
         startRound();
     } else {
-        // Ничья, начинаем свару
         updateGameLog('Ничья! Начинается свара.');
         startSwara(winners.map(w => w.player));
     }
 }
 
-// Свара (дополнительный раунд при ничьей)
+// Свара
 function startSwara(winners) {
     gameState.gamePhase = 'swara';
     gameState.players.forEach(player => {
         if (!winners.includes(player)) {
             player.isFolded = true;
         } else {
-            // Вносим дополнительную ставку
             const swaraBet = gameState.baseBet;
             if (player.chips >= swaraBet) {
                 player.chips -= swaraBet;
@@ -484,17 +441,14 @@ function startSwara(winners) {
         }
     });
 
-    // Раздаём новые карты оставшимся игрокам
     gameState.deck = createDeck();
     shuffleDeck(gameState.deck);
     dealCards();
     updateGameLog('Карты для свары розданы!');
-
-    // Вскрываем карты
     determineWinner();
 }
 
-// Обновление лога игры
+// Обновление лога
 function updateGameLog(message, isError = false) {
     const logElement = document.getElementById('game-log');
     const messageElement = document.createElement('p');
@@ -504,5 +458,15 @@ function updateGameLog(message, isError = false) {
     logElement.scrollTop = logElement.scrollHeight;
 }
 
-// Запуск игры при загрузке
-document.addEventListener('DOMContentLoaded', initGame);
+// Инициализация игры
+function initGame() {
+    console.log('Запускаю initGame');
+    const playerName = tg?.initDataUnsafe?.user?.first_name || 'Вы';
+    gameState.players = [
+        { id: 1, name: playerName, chips: 1000, cards: [], isFolded: false, isBot: false, isBlind: false, bet: 0 },
+        { id: 2, name: 'Алексей', chips: 1000, cards: [], isFolded: false, isBot: true, isBlind: false, bet: 0 },
+        { id: 3, name: 'Мария', chips: 1000, cards: [], isFolded: false, isBot: true, isBlind: false, bet: 0 }
+    ];
+
+    chooseDealer();
+}
