@@ -38,7 +38,24 @@ function initGame() {
     }
 
     const playerName = user.first_name || `Игрок_${user.id}`;
-    gameState.players.push({ id: user.id, name: playerName, chips: 1000, cards: [], isFolded: false, isBlind: false, bet: 0 });
+    const isJoining = tg.initDataUnsafe.start_param && tg.initDataUnsafe.start_param.includes('_join_');
+
+    // Если игрок присоединяется через ссылку
+    if (isJoining) {
+        const params = new URLSearchParams(tg.initDataUnsafe.start_param);
+        const startData = params.get('startapp');
+        if (startData && startData.startsWith(`${gameState.gameId}_join_`)) {
+            const [_, __, hostId, hostName] = startData.split('_');
+            if (!gameState.invitedPlayers.has(user.id)) {
+                gameState.invitedPlayers.add(user.id);
+                gameState.players.push({ id: user.id, name: playerName, chips: 1000, cards: [], isFolded: false, isBlind: false, bet: 0 });
+                syncGameState();
+            }
+        }
+    } else {
+        // Если это хост
+        gameState.players.push({ id: user.id, name: playerName, chips: 1000, cards: [], isFolded: false, isBlind: false, bet: 0 });
+    }
 
     const setupDiv = document.createElement('div');
     setupDiv.id = 'game-setup';
@@ -48,10 +65,13 @@ function initGame() {
         <p>Ожидание других игроков...</p>
         <p>Скопируйте и отправьте эту ссылку друзьям, чтобы они присоединились:</p>
         <input type="text" id="invite-link" value="https://t.me/YourBotName?startapp=${gameState.gameId}_join_${user.id}_${encodeURIComponent(playerName)}" readonly onclick="this.select()">
+        <button onclick="refreshPlayerList()">Обновить список игроков</button>
         <button onclick="startGameIfReady()">Начать игру</button>
     `;
     document.body.appendChild(setupDiv);
 
+    // Периодическая отправка состояния игры
+    setInterval(syncGameState, 5000);
     // Периодическая проверка подключения игроков
     setInterval(checkPlayerResponses, 5000);
 }
@@ -61,16 +81,26 @@ function checkPlayerResponses() {
     if (tg.initDataUnsafe && tg.initDataUnsafe.start_param) {
         const params = new URLSearchParams(tg.initDataUnsafe.start_param);
         const startData = params.get('startapp');
-        if (startData && startData.startsWith(`${gameState.gameId}_join_`)) {
-            const [_, __, playerId, playerName] = startData.split('_');
-            if (!gameState.invitedPlayers.has(playerId)) {
-                gameState.invitedPlayers.add(playerId);
-                gameState.players.push({ id: playerId, name: decodeURIComponent(playerName) || `Игрок_${playerId}`, chips: 1000, cards: [], isFolded: false, isBlind: false, bet: 0 });
-                updateGameLog(`${decodeURIComponent(playerName) || `Игрок_${playerId}`} присоединился к игре!`);
+        if (startData && startData.includes('_state_')) {
+            const stateData = decodeURIComponent(startData.split('_state_')[1]);
+            try {
+                const newState = JSON.parse(stateData);
+                gameState.players = newState.players || gameState.players;
+                gameState.invitedPlayers = new Set(newState.players.map(p => p.id));
                 updateSetupUI();
+            } catch (e) {
+                console.error('Ошибка парсинга состояния:', e);
             }
         }
     }
+}
+
+// Обновить список игроков
+function refreshPlayerList() {
+    const user = tg?.initDataUnsafe?.user;
+    if (!user) return;
+    const refreshLink = `https://t.me/YourBotName?startapp=${gameState.gameId}_state_${encodeURIComponent(JSON.stringify(gameState))}`;
+    window.location.href = refreshLink;
 }
 
 // Начать игру, если достаточно игроков
@@ -88,12 +118,14 @@ function startGameIfReady() {
 function updateSetupUI() {
     const setupDiv = document.getElementById('game-setup');
     if (setupDiv) {
+        const user = tg?.initDataUnsafe?.user;
         setupDiv.innerHTML = `
             <h2>Картойная игра</h2>
-            <p>Вы: ${gameState.players[0].name}</p>
+            <p>Вы: ${gameState.players.find(p => p.id === user.id)?.name || 'Неизвестный'}</p>
             <p>Игроки: ${gameState.players.map(p => p.name).join(', ')}</p>
             <p>Скопируйте и отправьте эту ссылку друзьям, чтобы они присоединились:</p>
-            <input type="text" id="invite-link" value="https://t.me/YourBotName?startapp=${gameState.gameId}_join_${gameState.players[0].id}_${encodeURIComponent(gameState.players[0].name)}" readonly onclick="this.select()">
+            <input type="text" id="invite-link" value="https://t.me/YourBotName?startapp=${gameState.gameId}_join_${user.id}_${encodeURIComponent(user.first_name || `Игрок_${user.id}`)}" readonly onclick="this.select()">
+            <button onclick="refreshPlayerList()">Обновить список игроков</button>
             <button onclick="startGameIfReady()">Начать игру</button>
         `;
     }
@@ -235,13 +267,7 @@ function startBetting() {
     updateGameLog(`Круг торгов ${gameState.bettingRound + 1}`);
 
     // Отправка данных текущему игроку (для синхронизации)
-    const gameStateData = JSON.stringify({
-        action: 'turn',
-        currentPlayer: currentPlayer.id,
-        bank: gameState.bank,
-        currentBet: gameState.currentBet
-    });
-    tg.sendData(gameStateData);
+    syncGameState();
 }
 
 // Подсчёт очков игрока
@@ -298,9 +324,10 @@ function renderPlayerCards() {
     const container = document.getElementById('player-cards');
     container.innerHTML = '';
 
-    const player = gameState.players[0];
+    const user = tg?.initDataUnsafe?.user;
+    const player = gameState.players.find(p => p.id === user.id);
     if (!player) {
-        console.error('Игрок с индексом 0 отсутствует!');
+        console.error('Игрок не найден в gameState!');
         return;
     }
 
@@ -343,7 +370,13 @@ function renderOpponents() {
     const container = document.getElementById('opponents');
     container.innerHTML = '';
 
-    for (let i = 1; i < gameState.players.length; i++) {
+    const user = tg?.initDataUnsafe?.user;
+    const currentPlayer = gameState.players.find(p => p.id === user.id);
+    if (!currentPlayer) return;
+
+    const playerIndex = gameState.players.findIndex(p => p.id === user.id);
+    for (let i = 0; i < gameState.players.length; i++) {
+        if (i === playerIndex) continue; // Пропускаем текущего игрока
         const player = gameState.players[i];
         if (!player) continue;
         const opponentElement = document.createElement('div');
@@ -359,9 +392,10 @@ function renderOpponents() {
 
 // Обновление информации о игроке
 function updatePlayerInfo() {
-    const player = gameState.players[0];
+    const user = tg?.initDataUnsafe?.user;
+    const player = gameState.players.find(p => p.id === user.id);
     if (!player) {
-        console.error('Игрок с индексом 0 отсутствует при обновлении UI!');
+        console.error('Игрок не найден при обновлении UI!');
         return;
     }
     document.getElementById('player-name').textContent = player.name;
@@ -373,7 +407,14 @@ function renderActions() {
     const container = document.getElementById('actions');
     container.innerHTML = '';
 
-    const currentPlayer = gameState.players[gameState.currentPlayer];
+    const user = tg?.initDataUnsafe?.user;
+    const currentPlayerIndex = gameState.players.findIndex(p => p.id === user.id);
+    if (currentPlayerIndex !== gameState.currentPlayer) {
+        container.innerHTML = '<p>Ожидание хода другого игрока...</p>';
+        return;
+    }
+
+    const currentPlayer = gameState.players[currentPlayerIndex];
     if (!currentPlayer || currentPlayer.isFolded || gameState.gamePhase === 'split') {
         return;
     }
@@ -437,7 +478,8 @@ function renderActions() {
 
 // Обработчики действий
 function handleFold() {
-    const player = gameState.players[0];
+    const user = tg?.initDataUnsafe?.user;
+    const player = gameState.players.find(p => p.id === user.id);
     if (!player) return;
     player.isFolded = true;
     gameState.droppedPlayers.push({ ...player });
@@ -448,7 +490,8 @@ function handleFold() {
 }
 
 function handleSee() {
-    const player = gameState.players[0];
+    const user = tg?.initDataUnsafe?.user;
+    const player = gameState.players.find(p => p.id === user.id);
     if (!player) return;
     player.isBlind = false;
     updateGameLog(`${player.name} посмотрел свои карты`);
@@ -458,7 +501,8 @@ function handleSee() {
 }
 
 function handleCall() {
-    const player = gameState.players[0];
+    const user = tg?.initDataUnsafe?.user;
+    const player = gameState.players.find(p => p.id === user.id);
     if (!player) return;
     const hasBlindPlayer = gameState.players.some(p => p.isBlind && !p.isFolded);
     let amount = gameState.currentBet - player.bet;
@@ -483,7 +527,8 @@ function handleCall() {
 }
 
 function handleRaise() {
-    const player = gameState.players[0];
+    const user = tg?.initDataUnsafe?.user;
+    const player = gameState.players.find(p => p.id === user.id);
     if (!player) return;
     const hasBlindPlayer = gameState.players.some(p => p.isBlind && !p.isFolded);
     let raiseAmount = gameState.currentBet + 10;
@@ -515,7 +560,8 @@ function handleRaise() {
 }
 
 function handleBlind() {
-    const player = gameState.players[0];
+    const user = tg?.initDataUnsafe?.user;
+    const player = gameState.players.find(p => p.id === user.id);
     if (!player) return;
     let blindBet = gameState.currentBet + 10;
     if (blindBet > gameState.maxBet) blindBet = gameState.maxBet;
@@ -536,7 +582,8 @@ function handleBlind() {
 }
 
 function handleShowdown() {
-    const player = gameState.players[0];
+    const user = tg?.initDataUnsafe?.user;
+    const player = gameState.players.find(p => p.id === user.id);
     if (!player) return;
     gameState.gamePhase = 'showdown';
     let opponentIndex = gameState.currentPlayer - 1;
@@ -667,6 +714,7 @@ function nextPlayer() {
 function syncGameState() {
     const gameStateData = JSON.stringify({
         action: 'sync',
+        gameId: gameState.gameId,
         players: gameState.players,
         bank: gameState.bank,
         currentBet: gameState.currentBet,
