@@ -80,6 +80,7 @@ function chooseDealer() {
 
 // Начало раунда
 function startRound() {
+    console.log('Начинаю новый раунд');
     gameState.gamePhase = 'dealing';
     gameState.bank = 0;
     gameState.currentBet = gameState.baseBet;
@@ -107,11 +108,13 @@ function startRound() {
 
     dealCards();
     updateGameLog('Карты розданы!');
+    console.log('Карты розданы:', gameState.players.map(p => p.cards));
     startBetting();
 }
 
 // Раздача карт
 function dealCards() {
+    console.log('Раздаю карты');
     for (let i = 0; i < 3; i++) {
         for (const player of gameState.players) {
             if (gameState.deck.length > 0) {
@@ -124,6 +127,7 @@ function dealCards() {
 // Начало торгов
 function startBetting() {
     gameState.gamePhase = 'betting';
+    console.log(`Начинаю торги, текущий игрок: ${gameState.players[gameState.currentPlayer].name}`);
     updateUI();
     updateGameLog(`Круг торгов ${gameState.bettingRound + 1}`);
     if (gameState.players[gameState.currentPlayer].isBot) {
@@ -170,7 +174,7 @@ function calculatePoints(cards) {
 
 // Обновление интерфейса
 function updateUI() {
-    console.log('Обновляю UI для игрока', gameState.players[gameState.currentPlayer].name);
+    console.log('Обновляю UI для игрока', gameState.players[gameState.currentPlayer]?.name);
     document.getElementById('bank-amount').textContent = gameState.bank;
 
     renderPlayerCards();
@@ -185,6 +189,11 @@ function renderPlayerCards() {
     container.innerHTML = '';
 
     const player = gameState.players[0]; // Всегда рендерим карты только текущего игрока
+    if (!player) {
+        console.error('Игрок с индексом 0 отсутствует!');
+        return;
+    }
+
     if (player.isBlind) {
         for (let i = 0; i < 3; i++) {
             const cardElement = document.createElement('div');
@@ -193,15 +202,19 @@ function renderPlayerCards() {
             container.appendChild(cardElement);
         }
     } else {
-        player.cards.forEach(card => {
-            const cardElement = createCardElement(card);
-            container.appendChild(cardElement);
-        });
+        if (player.cards && player.cards.length === 3) {
+            player.cards.forEach(card => {
+                const cardElement = createCardElement(card);
+                container.appendChild(cardElement);
+            });
+        } else {
+            console.error('Карты игрока отсутствуют или некорректны:', player.cards);
+        }
     }
 
     // Отображаем комбинацию и очки
     const comboContainer = document.getElementById('player-combo');
-    if (!player.isBlind) {
+    if (!player.isBlind && player.cards && player.cards.length === 3) {
         const points = calculatePoints(player.cards);
         comboContainer.textContent = `Ваша комбинация: ${player.cards.map(c => `${c.rank}${c.suit}`).join(', ')} (${points} очков)`;
     } else {
@@ -225,6 +238,7 @@ function renderOpponents() {
 
     for (let i = 1; i < gameState.players.length; i++) {
         const player = gameState.players[i];
+        if (!player) continue; // Пропускаем, если игрок отсутствует
         const opponentElement = document.createElement('div');
         opponentElement.className = `opponent ${gameState.currentPlayer === i ? 'active-player' : ''} ${player.isBlind ? 'blind' : ''}`;
         opponentElement.innerHTML = `
@@ -236,10 +250,15 @@ function renderOpponents() {
     }
 }
 
-// Обновление информации о игроке
+// Обновление информации о игрока
 function updatePlayerInfo() {
-    document.getElementById('player-name').textContent = gameState.players[0].name;
-    document.getElementById('player-chips').textContent = `${gameState.players[0].chips} фишек`;
+    const player = gameState.players[0];
+    if (!player) {
+        console.error('Игрок с индексом 0 отсутствует при обновлении UI!');
+        return;
+    }
+    document.getElementById('player-name').textContent = player.name;
+    document.getElementById('player-chips').textContent = `${player.chips} фишек`;
 }
 
 // Отрисовка действий
@@ -248,6 +267,10 @@ function renderActions() {
     container.innerHTML = '';
 
     const currentPlayer = gameState.players[gameState.currentPlayer];
+    if (!currentPlayer) {
+        console.error('Текущий игрок отсутствует при рендеринге действий!');
+        return;
+    }
 
     if (gameState.currentPlayer !== 0 || currentPlayer.isFolded || gameState.gamePhase === 'split') {
         return;
@@ -321,7 +344,7 @@ function renderActions() {
 function handleFold() {
     const player = gameState.players[0];
     player.isFolded = true;
-    gameState.droppedPlayers.push(player);
+    gameState.droppedPlayers.push({ ...player });
     gameState.players = gameState.players.filter(p => !p.isFolded);
     updateGameLog(`${player.name} упал`);
     checkEndOfRound();
@@ -340,12 +363,12 @@ function handleCall() {
     const hasBlindPlayer = gameState.players.some(p => p.isBlind && !p.isFolded);
     let amount = gameState.currentBet - player.bet;
     if (hasBlindPlayer && !player.isBlind) {
-        amount = (gameState.currentBet * 2) - player.bet; // Не темнящие платят вдвое больше
+        amount = (gameState.currentBet * 2) - player.bet;
     }
     if (amount > player.chips) {
         updateGameLog(`${player.name} выбывает из-за нехватки фишек`);
         player.isFolded = true;
-        gameState.droppedPlayers.push(player);
+        gameState.droppedPlayers.push({ ...player });
         gameState.players = gameState.players.filter(p => !p.isFolded);
         checkEndOfRound();
         return;
@@ -360,9 +383,9 @@ function handleCall() {
 function handleRaise() {
     const player = gameState.players[0];
     const hasBlindPlayer = gameState.players.some(p => p.isBlind && !p.isFolded);
-    let raiseAmount = gameState.currentBet + 10; // Минимальное повышение на 10
+    let raiseAmount = gameState.currentBet + 10;
     if (hasBlindPlayer && !player.isBlind) {
-        raiseAmount = (gameState.currentBet * 2) + 10; // Учитываем удвоение для не темнящих
+        raiseAmount = (gameState.currentBet * 2) + 10;
     }
     if (raiseAmount > gameState.maxBet) raiseAmount = gameState.maxBet;
     let amount = raiseAmount - player.bet;
@@ -376,7 +399,6 @@ function handleRaise() {
     gameState.bank += amount;
     gameState.currentBet = raiseAmount;
     updateGameLog(`${player.name} повышает ставку до ${raiseAmount}`);
-    // Если ставка на 1 больше, сбрасываем "в тёмную" для всех
     if (raiseAmount > gameState.currentBet + 1) {
         gameState.players.forEach(p => {
             if (p.isBlind) {
@@ -410,7 +432,6 @@ function handleBlind() {
 function handleShowdown() {
     gameState.gamePhase = 'showdown';
     const player = gameState.players[0];
-    // Уравниваем ставку с предыдущим игроком
     let opponentIndex = gameState.currentPlayer - 1;
     if (opponentIndex < 0) opponentIndex = gameState.players.length - 1;
     while (gameState.players[opponentIndex].isFolded && opponentIndex !== gameState.currentPlayer) {
@@ -425,7 +446,7 @@ function handleShowdown() {
     if (amount > player.chips) {
         updateGameLog(`${player.name} выбывает из-за нехватки фишек`);
         player.isFolded = true;
-        gameState.droppedPlayers.push(player);
+        gameState.droppedPlayers.push({ ...player });
         gameState.players = gameState.players.filter(p => !p.isFolded);
         checkEndOfRound();
         return;
@@ -444,17 +465,17 @@ function handleShowdown() {
 
     if (playerPoints > opponentPoints) {
         opponent.isFolded = true;
-        gameState.droppedPlayers.push(opponent);
+        gameState.droppedPlayers.push({ ...opponent });
         gameState.players = gameState.players.filter(p => !p.isFolded);
         updateGameLog(`${player.name} побеждает в вскрытии!`);
     } else if (playerPoints < opponentPoints) {
         player.isFolded = true;
-        gameState.droppedPlayers.push(player);
+        gameState.droppedPlayers.push({ ...player });
         gameState.players = gameState.players.filter(p => !p.isFolded);
         updateGameLog(`${opponent.name} побеждает в вскрытии!`);
     } else {
         player.isFolded = true;
-        gameState.droppedPlayers.push(player);
+        gameState.droppedPlayers.push({ ...player });
         gameState.players = gameState.players.filter(p => !p.isFolded);
         updateGameLog('Равные очки! Выбывает вскрывающийся.');
     }
@@ -475,6 +496,7 @@ function handleSplitBank() {
 // Проверка окончания раунда
 function checkEndOfRound() {
     const activePlayers = gameState.players.filter(player => !player.isFolded);
+    console.log('Проверяю конец раунда, активные игроки:', activePlayers.map(p => p.name));
     if (activePlayers.length === 1) {
         const winner = activePlayers[0];
         winner.chips += gameState.bank;
@@ -500,9 +522,16 @@ function checkEndOfRound() {
 
 // Переход к следующему игроку
 function nextPlayer() {
-    do {
-        gameState.currentPlayer = (gameState.currentPlayer + 1) % gameState.players.length;
-    } while (gameState.players[gameState.currentPlayer].isFolded && gameState.players.filter(p => !p.isFolded).length > 1);
+    const activePlayers = gameState.players.filter(player => !player.isFolded);
+    if (activePlayers.length <= 1) return; // Если остался один игрок, не переходим
+
+    let nextIndex = (gameState.currentPlayer + 1) % gameState.players.length;
+    while (gameState.players[nextIndex].isFolded && nextIndex !== gameState.currentPlayer) {
+        nextIndex = (nextIndex + 1) % gameState.players.length;
+    }
+
+    gameState.currentPlayer = nextIndex;
+    console.log(`Переход к следующему игроку: ${gameState.players[gameState.currentPlayer].name}`);
 
     updateUI();
 
@@ -514,6 +543,12 @@ function nextPlayer() {
 // Ход бота
 function makeBotMove() {
     const bot = gameState.players[gameState.currentPlayer];
+    if (!bot) {
+        console.error('Бот отсутствует при попытке хода!');
+        checkEndOfRound();
+        return;
+    }
+
     console.log(`Ход бота ${bot.name}, фишки: ${bot.chips}, ставка: ${bot.bet}, текущая ставка: ${gameState.currentBet}`);
     const botPoints = calculatePoints(bot.cards);
     const actions = [
@@ -544,19 +579,19 @@ function makeBotMove() {
     switch (action) {
         case 'fold':
             bot.isFolded = true;
-            gameState.droppedPlayers.push(bot);
+            gameState.droppedPlayers.push({ ...bot });
             gameState.players = gameState.players.filter(p => !p.isFolded);
             updateGameLog(`${bot.name} упал`);
             break;
         case 'call':
-            if (amount <= bot.chips) {
+            if (amount <= bot.chips && amount >= 0) {
                 bot.chips -= amount;
                 bot.bet += amount;
                 gameState.bank += amount;
                 updateGameLog(`${bot.name} поддерживает ставку (${amount})`);
             } else {
                 bot.isFolded = true;
-                gameState.droppedPlayers.push(bot);
+                gameState.droppedPlayers.push({ ...bot });
                 gameState.players = gameState.players.filter(p => !p.isFolded);
                 updateGameLog(`${bot.name} выбывает из-за нехватки фишек`);
             }
@@ -568,7 +603,7 @@ function makeBotMove() {
             }
             if (raiseAmount > gameState.maxBet) raiseAmount = gameState.maxBet;
             let raiseDiff = raiseAmount - bot.bet;
-            if (raiseDiff <= bot.chips) {
+            if (raiseDiff <= bot.chips && raiseDiff >= 0) {
                 bot.chips -= raiseDiff;
                 bot.bet += raiseDiff;
                 gameState.bank += raiseDiff;
@@ -582,7 +617,7 @@ function makeBotMove() {
                 });
             } else {
                 bot.isFolded = true;
-                gameState.droppedPlayers.push(bot);
+                gameState.droppedPlayers.push({ ...bot });
                 gameState.players = gameState.players.filter(p => !p.isFolded);
                 updateGameLog(`${bot.name} выбывает из-за нехватки фишек`);
             }
@@ -599,14 +634,14 @@ function makeBotMove() {
             if (hasBlindPlayer && !bot.isBlind) {
                 showdownAmount = (opponent.bet * 2) - bot.bet;
             }
-            if (showdownAmount <= bot.chips) {
+            if (showdownAmount <= bot.chips && showdownAmount >= 0) {
                 bot.chips -= showdownAmount;
                 bot.bet += showdownAmount;
                 gameState.bank += showdownAmount;
                 updateGameLog(`${bot.name} уравнивает ставку (${showdownAmount})`);
             } else {
                 bot.isFolded = true;
-                gameState.droppedPlayers.push(bot);
+                gameState.droppedPlayers.push({ ...bot });
                 gameState.players = gameState.players.filter(p => !p.isFolded);
                 updateGameLog(`${bot.name} выбывает из-за нехватки фишек`);
                 break;
@@ -618,17 +653,17 @@ function makeBotMove() {
             updateGameLog(`${opponent.name}: ${opponent.cards.map(c => `${c.rank}${c.suit}`).join(', ')} (${opponentPoints} очков)`);
             if (botPoints > opponentPoints) {
                 opponent.isFolded = true;
-                gameState.droppedPlayers.push(opponent);
+                gameState.droppedPlayers.push({ ...opponent });
                 gameState.players = gameState.players.filter(p => !p.isFolded);
                 updateGameLog(`${bot.name} побеждает в вскрытии!`);
             } else if (botPoints < opponentPoints) {
                 bot.isFolded = true;
-                gameState.droppedPlayers.push(bot);
+                gameState.droppedPlayers.push({ ...bot });
                 gameState.players = gameState.players.filter(p => !p.isFolded);
                 updateGameLog(`${opponent.name} побеждает в вскрытии!`);
             } else {
                 bot.isFolded = true;
-                gameState.droppedPlayers.push(bot);
+                gameState.droppedPlayers.push({ ...bot });
                 gameState.players = gameState.players.filter(p => !p.isFolded);
                 updateGameLog('Равные очки! Выбывает вскрывающийся.');
             }
@@ -689,7 +724,6 @@ function startSwara(winners) {
         swaraParticipants.push(winner);
     });
 
-    // Добавляем выбывших игроков, желающих участвовать
     gameState.droppedPlayers.forEach(player => {
         const entryFee = gameState.bank / 2;
         if (player.chips >= entryFee) {
@@ -736,7 +770,7 @@ function initGame() {
     const playerName = tg?.initDataUnsafe?.user?.first_name || 'Вы';
     gameState.players = [
         { id: 1, name: playerName, chips: 1000, cards: [], isFolded: false, isBot: false, isBlind: false, bet: 0 },
-        { id: 2, name: 'Алексей', chips: 1000, cards: [], isFolded: false, isBot: true, isBlind: false, bet: 0 },
+        { id: 2,  name: 'Алексей', chips: 1000, cards: [], isFolded: false, isBot: true, isBlind: false, bet: 0 },
         { id: 3, name: 'Мария', chips: 1000, cards: [], isFolded: false, isBot: true, isBlind: false, bet: 0 }
     ];
 
